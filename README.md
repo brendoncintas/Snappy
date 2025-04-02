@@ -11,7 +11,7 @@ Snappy is a plugin designed to save and load your character’s full appearance 
 ### Where to get it:
 Add this custom repo to Dalamud (check their documentation if you’re unfamiliar with that process):
 
-`https://raw.githubusercontent.com/brendoncintas/plugins/main/Plugins.json`
+`https://raw.githubusercontent.com/astrodoobs/plugins/main/Plugins.json`
 
 ### How to use it:
 1. **Set a working directory** in the settings menu.
