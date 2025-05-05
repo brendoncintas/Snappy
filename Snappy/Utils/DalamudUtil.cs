@@ -66,9 +66,16 @@ public class DalamudUtil : IDisposable
         _clientState.Login += OnLogin;
         //_clientState.Logout += OnLogout;
         _framework.Update += FrameworkOnUpdate;
-        if (IsLoggedIn)
+
+        // Queue initialization to happen on the next framework tick
+        _framework.RunOnTick(InitializeOnMainThread);
+    }
+
+    private void InitializeOnMainThread()
+    {
+        if (IsLoggedIn && _clientState.LocalPlayer != null)
         {
-            classJobId = _clientState.LocalPlayer!.ClassJob.Value.JobIndex;
+            classJobId = _clientState.LocalPlayer.ClassJob.Value.JobIndex;
             OnLogin();
         }
     }
