@@ -4,6 +4,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using ECommons;
 using MareSynchronos.Export;
 using Snappy.Managers;
 using Snappy.PMP;
@@ -51,6 +52,8 @@ namespace Snappy
             ICondition condition,
             IChatGui chatGui)
         {
+            ECommonsMain.Init(PluginInterface, this, ECommons.Module.DalamudReflector);
+
             this.Objects = objectTable;
 
             this.DalamudUtil = new DalamudUtil(clientState, objectTable, framework, condition, chatGui);
@@ -86,6 +89,7 @@ namespace Snappy
             this.WindowSystem.RemoveAllWindows();
             CommandManager.RemoveHandler(CommandName);
             this.SnapshotManager.RevertAllSnapshots();
+            ECommonsMain.Dispose();
         }
 
         private void OnCommand(string command, string args)
