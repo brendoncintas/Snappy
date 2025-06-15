@@ -19,13 +19,17 @@ public partial class GlamourerIpc : IDisposable
     private readonly DalamudUtil _dalamudUtil;
     private readonly ConcurrentQueue<Action> _queue;
     private readonly ApplyState _apply;
-    private readonly RevertStateName _revertByName; // Switched to RevertStateName
+    private readonly RevertToAutomationName _revertToAutomationByName;
+    private readonly UnlockStateName _unlockByName;
     private readonly GetStateBase64 _get;
     private readonly ApiVersion _version;
     private readonly EventSubscriber<bool> _gposeSubscriber;
     private readonly string _backupBase64 = ""; // truncate safely
     private Func<ICharacter, string?>? _getBase64FromCharacter;
     private readonly IDalamudPluginInterface _pluginInterface;
+
+    // A unique key for Snappy to use when locking/unlocking state.
+    private const uint SnappyLockKey = 0x534E4150; // "SNAP" in ASCII
 
     public GlamourerIpc(IDalamudPluginInterface pi, DalamudUtil dalamudUtil, ConcurrentQueue<Action> queue)
     {
@@ -35,7 +39,8 @@ public partial class GlamourerIpc : IDisposable
         _version = new ApiVersion(pi);
         _get = new GetStateBase64(pi);
         _apply = new ApplyState(pi);
-        _revertByName = new RevertStateName(pi); // Initialize the name-based revert
+        _revertToAutomationByName = new RevertToAutomationName(pi);
+        _unlockByName = new UnlockStateName(pi);
 
         // Subscribe to the GPose event. This is the reliable way to detect leaving GPose.
         // We fully qualify the static class name to resolve the ambiguity with the delegate.
@@ -73,8 +78,6 @@ public partial class GlamourerIpc : IDisposable
         _dalamudUtil.FrameworkUpdate -= WaitForGlamourer;
     }
 
-
-
     public void Dispose()
     {
         _gposeSubscriber.Dispose();
@@ -83,8 +86,12 @@ public partial class GlamourerIpc : IDisposable
     public void ApplyState(string? base64, ICharacter obj)
     {
         if (!Check() || string.IsNullOrEmpty(base64)) return;
-        Logger.Verbose("Glamourer applying for " + obj.Address.ToString("X"));
-        _apply.Invoke(base64, obj.ObjectIndex);
+
+        // Combine the default flags with the Lock flag to prevent automation from overriding our change.
+        var flags = ApplyFlag.Equipment | ApplyFlag.Customization | ApplyFlag.Lock;
+        Logger.Verbose($"Glamourer applying state with lock key {SnappyLockKey} for {obj.Address:X}");
+        // Apply by index is correct here because the character is guaranteed to be live.
+        _apply.Invoke(base64, obj.ObjectIndex, SnappyLockKey, flags);
     }
 
     public void RevertState(IGameObject obj)
@@ -98,9 +105,13 @@ public partial class GlamourerIpc : IDisposable
             return;
         }
 
-        // Use the RevertStateName IPC call. This should work even if the actor is no longer present.
-        var result = _revertByName.Invoke(charName);
-        Logger.Info($"Glamourer reverting state by name for '{charName}'. Result: {result}");
+        // First, unlock the state by name using our key. This is more resilient to timing issues.
+        var unlockResult = _unlockByName.Invoke(charName, SnappyLockKey);
+        Logger.Info($"Glamourer unlocking state by name for '{charName}'. Result: {unlockResult}");
+
+        // Then, revert the state to automation by name.
+        var revertResult = _revertToAutomationByName.Invoke(charName);
+        Logger.Info($"Glamourer reverting to automation by name for '{charName}'. Result: {revertResult}");
     }
 
     public string GetCharacterCustomization(IntPtr ptr)
