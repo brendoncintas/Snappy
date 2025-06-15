@@ -22,6 +22,7 @@ public partial class PenumbraIpc : IDisposable
     private readonly RemoveTemporaryMod _removeTempMod;
     private readonly AddTemporaryMod _addTempMod;
     private readonly CreateTemporaryCollection _createTempCollection;
+    private readonly global::Penumbra.Api.IpcSubscribers.DeleteTemporaryCollection _deleteTempCollection;
     private readonly AssignTemporaryCollection _assignTempCollection;
     private readonly GetEnabledState _enabled;
 
@@ -42,6 +43,7 @@ public partial class PenumbraIpc : IDisposable
         _removeTempMod = new RemoveTemporaryMod(pi);
         _addTempMod = new AddTemporaryMod(pi);
         _createTempCollection = new CreateTemporaryCollection(pi);
+        _deleteTempCollection = new global::Penumbra.Api.IpcSubscribers.DeleteTemporaryCollection(pi);
         _assignTempCollection = new AssignTemporaryCollection(pi);
         _enabled = new GetEnabledState(pi);
 
@@ -57,20 +59,17 @@ public partial class PenumbraIpc : IDisposable
     {
         if (!Check()) return;
 
-        _queue.Enqueue(() =>
+        if (!_tempCollectionGuids.TryGetValue(characterName, out var guid))
         {
-            if (!_tempCollectionGuids.TryGetValue(characterName, out var guid))
-            {
-                Logger.Warn($"No collection Guid found for character '{characterName}'");
-                return;
-            }
+            Logger.Warn($"[Penumbra] No temporary collection GUID found for character '{characterName}' to remove.");
+            return;
+        }
 
-            Logger.Verbose($"Removing temp collection for {characterName} (Guid: {guid})");
-            var ret = _removeTempMod.Invoke("Snap", guid, 0);
-            Logger.Verbose("RemoveTemporaryMod: " + ret);
+        Logger.Info($"[Penumbra] Deleting temporary collection for {characterName} (Guid: {guid})");
+        var ret = _deleteTempCollection.Invoke(guid);
+        Logger.Debug("[Penumbra] DeleteTemporaryCollection returned: " + ret);
 
-            _tempCollectionGuids.Remove(characterName);
-        });
+        _tempCollectionGuids.Remove(characterName);
     }
 
     public void Redraw(int objIdx)

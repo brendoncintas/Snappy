@@ -73,7 +73,8 @@ public partial class GlamourerIpc : IDisposable
         if (!Check()) return;
         if (obj is ICharacter c)
         {
-            _queue.Enqueue(() => _revert.Invoke(c.ObjectIndex));
+            _revert.Invoke(c.ObjectIndex);
+            Logger.Info($"Glamourer reverting state for {c.Name} ({c.Address:X})");
         }
         else
         {
