@@ -21,7 +21,7 @@ using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace Snappy.Managers
 {
-    public class SnapshotManager
+    public class SnapshotManager : IDisposable
     {
         private record ActiveSnapshot(ICharacter Character, Guid? CustomizePlusProfileId);
         private readonly List<ActiveSnapshot> _activeSnapshots = new();
@@ -30,6 +30,23 @@ namespace Snappy.Managers
         public SnapshotManager(Plugin plugin)
         {
             this.Plugin = plugin;
+            this.Plugin.IpcManager.GPoseChanged += OnGPoseChanged;
+        }
+
+        public void Dispose()
+        {
+            this.Plugin.IpcManager.GPoseChanged -= OnGPoseChanged;
+            this.RevertAllSnapshots();
+        }
+
+        private void OnGPoseChanged(bool inGPose)
+        {
+            // When we leave gpose, revert all snapshots.
+            if (!inGPose)
+            {
+                Logger.Info("Exited GPose, reverting all active snapshots.");
+                RevertAllSnapshots();
+            }
         }
 
         public void RevertAllSnapshots()

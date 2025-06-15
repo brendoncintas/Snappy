@@ -1,11 +1,8 @@
-﻿// GlamourerIpc.cs
-using Dalamud.Plugin;
+﻿using Dalamud.Plugin;
 using Dalamud.Game.ClientState.Objects.Types;
 using Glamourer.Api.Enums;
 using System;
 using System.Collections.Concurrent;
-using System.Text;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using Snappy.Utils;
 using Glamourer.Api.Helpers;
 
@@ -18,24 +15,25 @@ public partial class GlamourerIpc : IDisposable
 {
     private readonly DalamudUtil _dalamudUtil;
     private readonly ConcurrentQueue<Action> _queue;
+    private readonly Configuration _configuration;
     private readonly ApplyState _apply;
     private readonly RevertToAutomationName _revertToAutomationByName;
     private readonly UnlockStateName _unlockByName;
     private readonly GetStateBase64 _get;
     private readonly ApiVersion _version;
     private readonly EventSubscriber<bool> _gposeSubscriber;
-    private readonly string _backupBase64 = ""; // truncate safely
     private Func<ICharacter, string?>? _getBase64FromCharacter;
     private readonly IDalamudPluginInterface _pluginInterface;
 
     // A unique key for Snappy to use when locking/unlocking state.
     private const uint SnappyLockKey = 0x534E4150; // "SNAP" in ASCII
 
-    public GlamourerIpc(IDalamudPluginInterface pi, DalamudUtil dalamudUtil, ConcurrentQueue<Action> queue)
+    public GlamourerIpc(IDalamudPluginInterface pi, DalamudUtil dalamudUtil, ConcurrentQueue<Action> queue, Configuration configuration)
     {
         _dalamudUtil = dalamudUtil;
         _pluginInterface = pi;
         _queue = queue;
+        _configuration = configuration;
         _version = new ApiVersion(pi);
         _get = new GetStateBase64(pi);
         _apply = new ApplyState(pi);
@@ -116,7 +114,7 @@ public partial class GlamourerIpc : IDisposable
 
     public string GetCharacterCustomization(IntPtr ptr)
     {
-        if (!Check()) return _backupBase64;
+        if (!Check()) return SafeBase64(_configuration.FallBackGlamourerString);
 
         try
         {
@@ -134,7 +132,7 @@ public partial class GlamourerIpc : IDisposable
         }
 
         Logger.Warn("Falling back to stored base64");
-        return SafeBase64(_backupBase64);
+        return SafeBase64(_configuration.FallBackGlamourerString);
     }
 
     private bool Check()
@@ -159,7 +157,7 @@ public partial class GlamourerIpc : IDisposable
         }
         catch
         {
-            return _backupBase64;
+            return _configuration.FallBackGlamourerString;
         }
     }
 
@@ -168,7 +166,7 @@ public partial class GlamourerIpc : IDisposable
         if (!Check() || _getBase64FromCharacter == null)
         {
             Logger.Warn("[GlamourerIpc] Clipboard IPC not available.");
-            return SafeBase64(_backupBase64);
+            return SafeBase64(_configuration.FallBackGlamourerString);
         }
 
         try
@@ -183,6 +181,6 @@ public partial class GlamourerIpc : IDisposable
         }
 
         Logger.Warn("[GlamourerIpc] Glamourer string was null or empty, returning fallback.");
-        return SafeBase64(_backupBase64);
+        return SafeBase64(_configuration.FallBackGlamourerString);
     }
 }

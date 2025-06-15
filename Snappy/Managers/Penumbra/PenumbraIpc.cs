@@ -18,7 +18,6 @@ public partial class PenumbraIpc : IDisposable
 
     private readonly GetMetaManipulations _getMeta;
     private readonly RedrawObject _redraw;
-    //private readonly Penumbra.Api.IpcSubscribers.Legacy.RedrawObject _redrawLegacy;
     private readonly RemoveTemporaryMod _removeTempMod;
     private readonly AddTemporaryMod _addTempMod;
     private readonly CreateTemporaryCollection _createTempCollection;
@@ -39,7 +38,6 @@ public partial class PenumbraIpc : IDisposable
 
         _getMeta = new GetMetaManipulations(pi);
         _redraw = new RedrawObject(pi);
-        //_redrawLegacy = new Penumbra.Api.IpcSubscribers.Legacy.RedrawObject(pi);
         _removeTempMod = new RemoveTemporaryMod(pi);
         _addTempMod = new AddTemporaryMod(pi);
         _createTempCollection = new CreateTemporaryCollection(pi);
@@ -87,7 +85,6 @@ public partial class PenumbraIpc : IDisposable
             if (gameObj != null)
             {
                 Logger.Verbose("Redrawing " + gameObj);
-                //_redrawLegacy.Invoke(gameObj, RedrawType.Redraw);
             }
         });
     }
