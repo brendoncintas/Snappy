@@ -67,7 +67,7 @@ public class IpcManager : IDisposable
     }
 
     // Penumbra passthroughs
-    public void PenumbraRemoveTemporaryCollection(string name) => _penumbra.RemoveTemporaryCollection(name);
+    public void PenumbraRemoveTemporaryCollection(int objIdx) => _penumbra.RemoveTemporaryCollection(objIdx);
     public void PenumbraRedraw(int objIdx) => _penumbra.Redraw(objIdx);
     public void PenumbraRedraw(IntPtr objPtr) => _penumbra.Redraw(objPtr);
     public string GetMetaManipulations(int objIdx) => _penumbra.GetMetaManipulations(objIdx);

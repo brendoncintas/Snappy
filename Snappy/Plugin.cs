@@ -39,13 +39,15 @@ namespace Snappy
         [PluginService] public static ICommandManager CommandManager { get; private set; } = null!;
         [PluginService] public static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
         [PluginService] public static IDataManager DataManager { get; private set; } = null!;
+        [PluginService] public static IGameInteropProvider GameInteropProvider { get; private set; } = null!;
 
         public Plugin(
             IFramework framework,
             IObjectTable objectTable,
             IClientState clientState,
             ICondition condition,
-            IChatGui chatGui)
+            IChatGui chatGui,
+            IGameInteropProvider gameInteropProvider)
         {
             ECommonsMain.Init(PluginInterface, this, ECommons.Module.DalamudReflector);
 
@@ -55,9 +57,9 @@ namespace Snappy
             Configuration.Initialize(PluginInterface);
 
             this.DalamudUtil = new DalamudUtil(clientState, objectTable, framework, condition, chatGui);
-            this.IpcManager = new IpcManager(PluginInterface, this.DalamudUtil, this.Configuration);
+            this.IpcManager = new IpcManager(PluginInterface, this.DalamudUtil);
 
-            this.SnapshotManager = new SnapshotManager(this);
+            this.SnapshotManager = new SnapshotManager(this, gameInteropProvider);
             this.MCDFManager = new MareCharaFileManager(this);
             this.PMPExportManager = new PMPExportManager(this);
 
@@ -83,6 +85,7 @@ namespace Snappy
             this.WindowSystem.RemoveAllWindows();
             CommandManager.RemoveHandler(CommandName);
             this.SnapshotManager.Dispose();
+            this.IpcManager.Dispose();
             ECommonsMain.Dispose();
         }
 

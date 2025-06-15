@@ -14,7 +14,7 @@ public partial class PenumbraIpc : IDisposable
     private readonly DalamudUtil _dalamudUtil;
     private readonly ConcurrentQueue<Action> _queue;
     private readonly IDalamudPluginInterface _pi;
-    private readonly Dictionary<string, Guid> _tempCollectionGuids = new();
+    private readonly Dictionary<int, Guid> _tempCollectionGuids = new();
 
     private readonly GetMetaManipulations _getMeta;
     private readonly RedrawObject _redraw;
@@ -53,21 +53,21 @@ public partial class PenumbraIpc : IDisposable
 
     public void Dispose() { }
 
-    public void RemoveTemporaryCollection(string characterName)
+    public void RemoveTemporaryCollection(int objIdx)
     {
         if (!Check()) return;
 
-        if (!_tempCollectionGuids.TryGetValue(characterName, out var guid))
+        if (!_tempCollectionGuids.TryGetValue(objIdx, out var guid))
         {
-            Logger.Warn($"[Penumbra] No temporary collection GUID found for character '{characterName}' to remove.");
+            Logger.Warn($"[Penumbra] No temporary collection GUID found for object index '{objIdx}' to remove.");
             return;
         }
 
-        Logger.Info($"[Penumbra] Deleting temporary collection for {characterName} (Guid: {guid})");
+        Logger.Info($"[Penumbra] Deleting temporary collection for object index {objIdx} (Guid: {guid})");
         var ret = _deleteTempCollection.Invoke(guid);
         Logger.Debug("[Penumbra] DeleteTemporaryCollection returned: " + ret);
 
-        _tempCollectionGuids.Remove(characterName);
+        _tempCollectionGuids.Remove(objIdx);
     }
 
     public void Redraw(int objIdx)
@@ -98,11 +98,11 @@ public partial class PenumbraIpc : IDisposable
     public void SetTemporaryMods(ICharacter character, int? idx, Dictionary<string, string> mods, string manips)
     {
         if (!Check() || idx == null) return;
-        var name = "Snap_" + character.Name.TextValue;
+        var name = "Snap_" + character.Name.TextValue + "_" + idx.Value;
         var collection = _createTempCollection.Invoke(name);
         Logger.Verbose("Created temp collection: " + collection);
 
-        _tempCollectionGuids[character.Name.TextValue] = collection;
+        _tempCollectionGuids[idx.Value] = collection;
 
         var assign = _assignTempCollection.Invoke(collection, idx.Value, true);
         Logger.Verbose("Assigned temp collection: " + assign);
