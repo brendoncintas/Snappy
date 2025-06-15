@@ -17,9 +17,8 @@ public partial class CustomizeIpc : IDisposable
     private readonly ICallGateSubscriber<ushort, (int, Guid?)> _getActiveProfileId;
     private readonly ICallGateSubscriber<Guid, (int, string?)> _getProfileById;
     private readonly ICallGateSubscriber<ushort, string, (int, Guid?)> _setTempProfile;
-    private readonly ICallGateSubscriber<ushort, int> _deleteTempProfile;
+    private readonly ICallGateSubscriber<Guid, int> _deleteTempProfileById;
 
-    // FIX: Removed the ConcurrentQueue from the constructor
     public CustomizeIpc(IDalamudPluginInterface pi, DalamudUtil dalamudUtil)
     {
         _dalamudUtil = dalamudUtil;
@@ -29,7 +28,7 @@ public partial class CustomizeIpc : IDisposable
         _getActiveProfileId = pi.GetIpcSubscriber<ushort, (int, Guid?)>("CustomizePlus.Profile.GetActiveProfileIdOnCharacter");
         _getProfileById = pi.GetIpcSubscriber<Guid, (int, string?)>("CustomizePlus.Profile.GetByUniqueId");
         _setTempProfile = pi.GetIpcSubscriber<ushort, string, (int, Guid?)>("CustomizePlus.Profile.SetTemporaryProfileOnCharacter");
-        _deleteTempProfile = pi.GetIpcSubscriber<ushort, int>("CustomizePlus.Profile.DeleteTemporaryProfileOnCharacter");
+        _deleteTempProfileById = pi.GetIpcSubscriber<Guid, int>("CustomizePlus.Profile.DeleteTemporaryProfileByUniqueId");
     }
 
     public void Dispose() { }
@@ -89,11 +88,10 @@ public partial class CustomizeIpc : IDisposable
         }
     }
 
-    public void SetScale(IntPtr address, string scale)
+    public Guid? SetScale(IntPtr address, string scale)
     {
-        if (!CheckApi() || string.IsNullOrEmpty(scale)) return;
+        if (!CheckApi() || string.IsNullOrEmpty(scale)) return null;
 
-        // FIX: Removed the action queue and execute directly.
         var gameObj = _dalamudUtil.CreateGameObject(address);
         if (gameObj is ICharacter c)
         {
@@ -102,32 +100,29 @@ public partial class CustomizeIpc : IDisposable
                 Logger.Info($"C+ applying temporary profile to: {c.Name} ({c.Address:X})");
                 var (code, guid) = _setTempProfile.InvokeFunc(c.ObjectIndex, scale);
                 Logger.Debug($"C+ SetTemporaryProfileOnCharacter result: Code={code}, Guid={guid}");
+                return guid;
             }
             catch (Exception ex)
             {
                 Logger.Error("Exception during C+ SetScale IPC.", ex);
             }
         }
+        return null;
     }
 
-    public void Revert(IntPtr address)
+    public void Revert(Guid profileId)
     {
-        if (!CheckApi()) return;
+        if (!CheckApi() || profileId == Guid.Empty) return;
 
-        // FIX: Removed the action queue and execute directly.
-        var gameObj = _dalamudUtil.CreateGameObject(address);
-        if (gameObj is ICharacter c)
+        try
         {
-            try
-            {
-                Logger.Info($"C+ reverting temporary profile for: {c.Name} ({c.Address:X})");
-                var code = _deleteTempProfile.InvokeFunc(c.ObjectIndex);
-                Logger.Debug($"C+ DeleteTemporaryProfileOnCharacter result: Code={code}");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("Exception during C+ Revert IPC.", ex);
-            }
+            Logger.Info($"C+ reverting temporary profile for Guid: {profileId}");
+            var code = _deleteTempProfileById.InvokeFunc(profileId);
+            Logger.Debug($"C+ DeleteTemporaryProfileByUniqueId result: Code={code}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Exception during C+ Revert IPC.", ex);
         }
     }
 }

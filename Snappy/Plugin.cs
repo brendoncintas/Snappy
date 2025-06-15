@@ -78,16 +78,29 @@ namespace Snappy
                 HelpMessage = "Opens main Snappy interface"
             });
 
+            this.IpcManager.GPoseChanged += OnGPoseChanged;
+
             PluginInterface.UiBuilder.Draw += DrawUI;
             PluginInterface.UiBuilder.OpenConfigUi += DrawConfigUI;
             PluginInterface.UiBuilder.DisableGposeUiHide = true;
             PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI;
         }
 
+        private void OnGPoseChanged(bool inGPose)
+        {
+            // When we leave gpose, revert all snapshots.
+            if (!inGPose)
+            {
+                Logger.Info("Exited GPose, reverting all active snapshots.");
+                SnapshotManager.RevertAllSnapshots();
+            }
+        }
+
         public void Dispose()
         {
             this.WindowSystem.RemoveAllWindows();
             CommandManager.RemoveHandler(CommandName);
+            this.IpcManager.GPoseChanged -= OnGPoseChanged;
             this.SnapshotManager.RevertAllSnapshots();
             ECommonsMain.Dispose();
         }

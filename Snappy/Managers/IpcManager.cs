@@ -18,6 +18,7 @@ public delegate void PenumbraRedrawEvent(IntPtr address, int objTblIdx);
 public delegate void HeelsOffsetChange(float change);
 public delegate void PenumbraResourceLoadEvent(IntPtr drawObject, string gamePath, string filePath);
 public delegate void CustomizePlusScaleChange(string? scale);
+public delegate void GPoseChange(bool inGPose);
 
 public class IpcManager : IDisposable
 {
@@ -28,6 +29,8 @@ public class IpcManager : IDisposable
     private readonly GlamourerIpc _glamourer;
     private readonly CustomizeIpc _customize;
 
+    public event GPoseChange? GPoseChanged;
+
     public IpcManager(IDalamudPluginInterface pi, DalamudUtil dalamudUtil)
     {
         Logger.Verbose("Creating IpcManager delegator");
@@ -37,9 +40,12 @@ public class IpcManager : IDisposable
         _glamourer = new GlamourerIpc(pi, dalamudUtil, actionQueue);
         _customize = new CustomizeIpc(pi, dalamudUtil);
 
+        _glamourer.GPoseChanged += OnGPoseChanged;
         _dalamudUtil.FrameworkUpdate += HandleActionQueue;
         _dalamudUtil.ZoneSwitchEnd += () => actionQueue.Clear();
     }
+
+    private void OnGPoseChanged(bool inGPose) => GPoseChanged?.Invoke(inGPose);
 
     private void HandleActionQueue()
     {
@@ -53,6 +59,7 @@ public class IpcManager : IDisposable
     public void Dispose()
     {
         _penumbra.Dispose();
+        _glamourer.GPoseChanged -= OnGPoseChanged;
         _glamourer.Dispose();
         _customize.Dispose();
         _dalamudUtil.FrameworkUpdate -= HandleActionQueue;
@@ -333,6 +340,6 @@ public class IpcManager : IDisposable
 
         return cPlusData;
     }
-    public void SetCustomizePlusScale(IntPtr address, string scale) => _customize.SetScale(address, scale);
-    public void RevertCustomizePlusScale(IntPtr address) => _customize.Revert(address);
+    public Guid? SetCustomizePlusScale(IntPtr address, string scale) => _customize.SetScale(address, scale);
+    public void RevertCustomizePlusScale(Guid profileId) => _customize.Revert(profileId);
 }

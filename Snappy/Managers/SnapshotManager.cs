@@ -23,8 +23,9 @@ namespace Snappy.Managers
 {
     public class SnapshotManager
     {
+        private record ActiveSnapshot(ICharacter Character, Guid? CustomizePlusProfileId);
+        private readonly List<ActiveSnapshot> _activeSnapshots = new();
         private Plugin Plugin;
-        private List<ICharacter> tempCollections = new();
 
         public SnapshotManager(Plugin plugin)
         {
@@ -33,13 +34,19 @@ namespace Snappy.Managers
 
         public void RevertAllSnapshots()
         {
-            foreach (var character in tempCollections)
+            if (!_activeSnapshots.Any()) return;
+
+            Logger.Info($"Reverting {_activeSnapshots.Count} active snapshots.");
+            foreach (var snapshot in _activeSnapshots)
             {
-                Plugin.IpcManager.PenumbraRemoveTemporaryCollection(character.Name.TextValue);
-                Plugin.IpcManager.RevertGlamourerState(character);
-                Plugin.IpcManager.RevertCustomizePlusScale(character.Address);
+                Plugin.IpcManager.PenumbraRemoveTemporaryCollection(snapshot.Character.Name.TextValue);
+                Plugin.IpcManager.RevertGlamourerState(snapshot.Character);
+                if (snapshot.CustomizePlusProfileId.HasValue)
+                {
+                    Plugin.IpcManager.RevertCustomizePlusScale(snapshot.CustomizePlusProfileId.Value);
+                }
             }
-            tempCollections.Clear();
+            _activeSnapshots.Clear();
         }
         public bool AppendSnapshot(ICharacter character)
         {
@@ -371,10 +378,10 @@ namespace Snappy.Managers
 
             Plugin.IpcManager.PenumbraRemoveTemporaryCollection(characterApplyTo.Name.TextValue);
             Plugin.IpcManager.PenumbraSetTempMods(characterApplyTo, objIdx, moddedPaths, snapshotInfo.ManipulationString);
-            if (!tempCollections.Contains(characterApplyTo))
-            {
-                tempCollections.Add(characterApplyTo);
-            }
+
+            // Remove any previous snapshot data for this character to avoid duplicates
+            _activeSnapshots.RemoveAll(s => s.Character.Address == characterApplyTo.Address);
+            Guid? cplusProfileId = null;
 
             //Apply Customize+ if it exists and C+ is installed
             if (Plugin.IpcManager.IsCustomizePlusAvailable())
@@ -384,7 +391,7 @@ namespace Snappy.Managers
                     string sanitizedCustPlusData = SanitizeCustomizePlusJson(snapshotInfo.CustomizeData);
                     if (!string.IsNullOrEmpty(sanitizedCustPlusData))
                     {
-                        Plugin.IpcManager.SetCustomizePlusScale(characterApplyTo.Address, sanitizedCustPlusData);
+                        cplusProfileId = Plugin.IpcManager.SetCustomizePlusScale(characterApplyTo.Address, sanitizedCustPlusData);
                     }
                 }
             }
@@ -394,6 +401,9 @@ namespace Snappy.Managers
 
             //Redraw
             Plugin.IpcManager.PenumbraRedraw(objIdx);
+
+            //Track the applied snapshot for reversion
+            _activeSnapshots.Add(new ActiveSnapshot(characterApplyTo, cplusProfileId));
 
             return true;
         }
