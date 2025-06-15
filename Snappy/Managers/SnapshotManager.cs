@@ -103,36 +103,7 @@ namespace Snappy.Managers
             // Merge Customize+
             if (Plugin.IpcManager.IsCustomizePlusAvailable())
             {
-                Logger.Debug("C+ api loaded, updating C+ data in append mode");
-                var data = Plugin.IpcManager.GetCustomizePlusScaleFromMare(character);
-                if (data.IsNullOrEmpty())
-                {
-                    Logger.Debug("C+ data from Mare Synchronos is empty, attempting to get from IPC.");
-                    data = Plugin.IpcManager.GetCustomizePlusScale(character);
-                    if (!data.IsNullOrEmpty())
-                    {
-                        Logger.Info("Successfully used C+ data from IPC for append.");
-                    }
-                    else
-                    {
-                        Logger.Warn("C+ data from IPC is also empty. C+ data will not be updated.");
-                    }
-                }
-                else
-                {
-                    Logger.Info("Successfully used C+ data from Mare Synchronos for append.");
-                }
-                if (!data.IsNullOrEmpty())
-                {
-                    snapshotInfo.CustomizeData = data;
-
-                    // Create and save the C+ template file for external use
-                    var templateString = CreateCustomizePlusTemplate(data, character.Name.TextValue);
-                    if (!string.IsNullOrEmpty(templateString))
-                    {
-                        File.WriteAllText(Path.Combine(path, "customizePlus.json"), templateString);
-                    }
-                }
+                HandleCustomizePlusData(character, snapshotInfo, path);
             }
 
             // Save the glamourer string
@@ -224,38 +195,7 @@ namespace Snappy.Managers
 
             if (Plugin.IpcManager.IsCustomizePlusAvailable())
             {
-                Logger.Debug("C+ api loaded");
-                var data = Plugin.IpcManager.GetCustomizePlusScaleFromMare(character);
-
-                if (data.IsNullOrEmpty())
-                {
-                    Logger.Debug("C+ data from Mare Synchronos is empty, attempting to get from IPC.");
-                    data = Plugin.IpcManager.GetCustomizePlusScale(character);
-                    if (!data.IsNullOrEmpty())
-                    {
-                        Logger.Info("Successfully used C+ data from IPC.");
-                    }
-                    else
-                    {
-                        Logger.Warn("C+ data from IPC is also empty. C+ data will not be saved.");
-                    }
-                }
-                else
-                {
-                    Logger.Info("Successfully used C+ data from Mare Synchronos.");
-                }
-
-                if (!data.IsNullOrEmpty())
-                {
-                    snapshotInfo.CustomizeData = data;
-
-                    // Create and save the C+ template file for external use
-                    var templateString = CreateCustomizePlusTemplate(data, character.Name.TextValue);
-                    if (!string.IsNullOrEmpty(templateString))
-                    {
-                        File.WriteAllText(Path.Combine(path, "customizePlus.json"), templateString);
-                    }
-                }
+                HandleCustomizePlusData(character, snapshotInfo, path);
             }
 
             var options = new System.Text.Json.JsonSerializerOptions
@@ -268,24 +208,68 @@ namespace Snappy.Managers
             return true;
         }
 
-        private string CreateCustomizePlusTemplate(string profileData, string characterName)
+        private void HandleCustomizePlusData(ICharacter character, SnapshotInfo snapshotInfo, string snapshotPath)
+        {
+            string? cPlusDataJson = null;
+            string? cPlusDataB64 = null;
+
+            // Prioritize Mare data
+            var mareData = Plugin.IpcManager.GetCustomizePlusScaleFromMare(character);
+            if (!mareData.IsNullOrEmpty())
+            {
+                Logger.Info("Successfully used C+ data from Mare Synchronos.");
+                cPlusDataB64 = mareData;
+                try
+                {
+                    cPlusDataJson = Encoding.UTF8.GetString(Convert.FromBase64String(cPlusDataB64));
+                }
+                catch (Exception e)
+                {
+                    Logger.Error("Failed to decode C+ data from Mare", e);
+                }
+            }
+            else
+            {
+                // Fallback to IPC data
+                Logger.Debug("C+ data from Mare Synchronos is empty, attempting to get from IPC.");
+                var ipcData = Plugin.IpcManager.GetCustomizePlusScale(character);
+                if (!ipcData.IsNullOrEmpty())
+                {
+                    Logger.Info("Successfully used C+ data from IPC.");
+                    cPlusDataJson = ipcData;
+                    try
+                    {
+                        cPlusDataB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(cPlusDataJson));
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Error("Failed to encode C+ data from IPC", e);
+                    }
+                }
+                else
+                {
+                    Logger.Warn("C+ data from IPC is also empty. C+ data will not be saved.");
+                }
+            }
+
+            // If we successfully got data from either source, process it.
+            if (!string.IsNullOrEmpty(cPlusDataB64) && !string.IsNullOrEmpty(cPlusDataJson))
+            {
+                // Save the Base64 version to the snapshot.
+                snapshotInfo.CustomizeData = cPlusDataB64;
+
+                // Create and save the importable template file from the JSON version.
+                var templateString = CreateCustomizePlusTemplate(cPlusDataJson, character.Name.TextValue);
+                if (!string.IsNullOrEmpty(templateString))
+                {
+                    File.WriteAllText(Path.Combine(snapshotPath, "customizePlus.json"), templateString);
+                }
+            }
+        }
+
+        private string CreateCustomizePlusTemplate(string profileJson, string characterName)
         {
             const byte templateVersionByte = 4;
-            string profileJson;
-
-            // The data from Mare is likely Base64, but data from C+ IPC is raw JSON.
-            // We need to decode if necessary before parsing.
-            try
-            {
-                var bytes = Convert.FromBase64String(profileData);
-                profileJson = Encoding.UTF8.GetString(bytes);
-                Logger.Debug("C+ data for template was Base64, decoded successfully.");
-            }
-            catch (FormatException)
-            {
-                profileJson = profileData;
-                Logger.Debug("C+ data for template was not Base64, assuming raw JSON.");
-            }
 
             try
             {
