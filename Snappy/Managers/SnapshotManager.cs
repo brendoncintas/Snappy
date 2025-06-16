@@ -549,7 +549,7 @@ namespace Snappy.Managers
                 AddReplacementsFromRenderModel(mdl, replacements, objIdx.Value, 0);
             }
 
-            AddPlayerSpecificReplacements(replacements, charaPointer, human, objIdx.Value);
+            AddPlayerSpecificReplacements(replacements, human, objIdx.Value);
 
             return replacements;
         }
@@ -692,7 +692,7 @@ namespace Snappy.Managers
             AddFileReplacement(replacements, shpkFileReplacement);
         }
 
-        private unsafe void AddPlayerSpecificReplacements(List<FileReplacement> replacements, IntPtr charaPointer, Human* human, int objIdx)
+        private unsafe void AddPlayerSpecificReplacements(List<FileReplacement> replacements, Human* human, int objIdx)
         {
             var weaponObject = (Interop.Weapon*)((FFXIVClientStructs.FFXIV.Client.Graphics.Scene.Object*)human)->ChildObject;
 
@@ -710,14 +710,13 @@ namespace Snappy.Managers
                 }
             }
 
-            AddReplacementSkeleton(((Interop.HumanExt*)human)->Human.RaceSexId, objIdx, replacements);
+            AddReplacementSkeleton(human->RaceSexId, objIdx, replacements);
 
-            var humanExt = (Interop.HumanExt*)human;
-            if (humanExt->Decal != null)
+            if (human->Decal != null)
             {
                 try
                 {
-                    AddReplacementsFromTexture(new ByteString(humanExt->Decal->FileName()).ToString(), replacements, objIdx, 0, false);
+                    AddReplacementsFromTexture(new ByteString(((Interop.ResourceHandle*)human->Decal)->FileName()).ToString(), replacements, objIdx, 0, false);
                 }
                 catch
                 {
@@ -725,11 +724,11 @@ namespace Snappy.Managers
                 }
             }
 
-            if (humanExt->LegacyBodyDecal != null)
+            if (human->LegacyBodyDecal != null)
             {
                 try
                 {
-                    AddReplacementsFromTexture(new ByteString(humanExt->LegacyBodyDecal->FileName()).ToString(), replacements, objIdx, 0, false);
+                    AddReplacementsFromTexture(new ByteString(((Interop.ResourceHandle*)human->LegacyBodyDecal)->FileName()).ToString(), replacements, objIdx, 0, false);
                 }
                 catch
                 {
