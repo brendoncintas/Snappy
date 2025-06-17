@@ -22,6 +22,7 @@ using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using Dalamud.Plugin.Services;
+using System.Text.RegularExpressions;
 
 namespace Snappy.Managers
 {
@@ -574,8 +575,36 @@ namespace Snappy.Managers
             Logger.Verbose("Checking File Replacement for Model " + mdlPath);
 
             FileReplacement mdlFileReplacement = CreateFileReplacement(mdlPath, objIdx);
-
             AddFileReplacement(replacements, mdlFileReplacement);
+
+            var match = Regex.Match(mdlPath, @"chara/(?:equipment/e|accessory/a)(?<id>\d{4})/");
+            if (match.Success)
+            {
+                var equipId = ushort.Parse(match.Groups["id"].Value);
+                bool isAccessory = mdlPath.Contains("/accessory/");
+                Logger.Debug($"Identified gear ID {equipId} from model path. Checking for associated AVFX files.");
+
+                for (byte effectId = 0; effectId < 16; effectId++)
+                {
+                    string avfxPath;
+                    if (isAccessory)
+                    {
+                        avfxPath = $"chara/accessory/a{equipId:D4}/vfx/eff/va{effectId:D4}.avfx";
+                    }
+                    else
+                    {
+                        avfxPath = $"chara/equipment/e{equipId:D4}/vfx/eff/ve{effectId:D4}.avfx";
+                    }
+
+                    var avfxFileReplacement = CreateFileReplacement(avfxPath, objIdx, true);
+
+                    if (avfxFileReplacement.HasFileReplacement)
+                    {
+                        Logger.Info($"Found modded gear VFX: {avfxPath} -> {avfxFileReplacement.ResolvedPath}");
+                        AddReplacementsFromAvfx(avfxFileReplacement, replacements, objIdx);
+                    }
+                }
+            }
 
             for (var mtrlIdx = 0; mtrlIdx < mdl->MaterialCount; mtrlIdx++)
             {
@@ -584,6 +613,85 @@ namespace Snappy.Managers
 
                 AddReplacementsFromMaterial(mtrl, replacements, objIdx, inheritanceLevel + 1);
             }
+        }
+
+        private void AddReplacementsFromAvfx(FileReplacement avfxFile, List<FileReplacement> replacements, int objIdx)
+        {
+            AddFileReplacement(replacements, avfxFile);
+
+            try
+            {
+                var atexPaths = ParseAvfxForTexturePaths(avfxFile.ResolvedPath);
+
+                foreach (var atexPath in atexPaths)
+                {
+                    if (string.IsNullOrEmpty(atexPath)) continue;
+
+                    Logger.Verbose($"Found linked ATEX in {Path.GetFileName(avfxFile.ResolvedPath)}: {atexPath}");
+                    AddReplacementsFromTexture(atexPath, replacements, objIdx, doNotReverseResolve: true);
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.Error($"Failed to parse AVFX file {avfxFile.ResolvedPath}", e);
+            }
+        }
+
+        private List<string> ParseAvfxForTexturePaths(string avfxDiskPath)
+        {
+            var texturePaths = new List<string>();
+            if (!File.Exists(avfxDiskPath))
+            {
+                Logger.Warn($"[AVFX Parser] File not found: {avfxDiskPath}");
+                return texturePaths;
+            }
+
+            try
+            {
+                var data = File.ReadAllBytes(avfxDiskPath);
+                using var stream = new MemoryStream(data);
+                using var r = new BinaryReader(stream);
+
+                var magic = r.ReadUInt32();
+                if (magic != 0x58465641)
+                {
+                    Logger.Warn($"[AVFX Parser] Invalid magic header for file: {avfxDiskPath}");
+                    return texturePaths;
+                }
+
+                var fileSize = r.ReadUInt32();
+
+                while (r.BaseStream.Position < fileSize)
+                {
+                    if (r.BaseStream.Position + 8 > r.BaseStream.Length) break;
+
+                    var blockName = r.ReadUInt32();
+                    var blockSize = r.ReadUInt32();
+                    long nextBlockPos = r.BaseStream.Position + (long)blockSize.AvfxRoundTo4();
+
+                    if (blockName == 0x00546578) // "Tex"
+                    {
+                        if (blockSize > 1 && r.BaseStream.Position + blockSize <= r.BaseStream.Length)
+                        {
+                            var pathBytes = r.ReadBytes((int)blockSize - 1);
+                            var path = Encoding.UTF8.GetString(pathBytes);
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                texturePaths.Add(path);
+                            }
+                        }
+                    }
+
+                    if (nextBlockPos > r.BaseStream.Length) break;
+                    r.BaseStream.Position = nextBlockPos;
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.Error($"[AVFX Parser] Error parsing {avfxDiskPath}", e);
+            }
+
+            return texturePaths;
         }
 
         private unsafe void AddReplacementsFromMaterial(Material* mtrl, List<FileReplacement> replacements, int objIdx, int inheritanceLevel = 0)
@@ -787,6 +895,15 @@ namespace Snappy.Managers
 
             Logger.Debug($"Created file replacement for resolved path {fileReplacement.ResolvedPath}, hash {fileReplacement.Hash}, gamepath {fileReplacement.GamePaths[0]}");
             return fileReplacement;
+        }
+    }
+
+    internal static class AvfxParsingExtensions
+    {
+        internal static uint AvfxRoundTo4(this uint size)
+        {
+            var rest = size & 0b11u;
+            return rest > 0 ? (size & ~0b11u) + 4u : size;
         }
     }
 }
