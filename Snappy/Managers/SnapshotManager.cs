@@ -81,56 +81,61 @@ namespace Snappy.Managers
         {
             var charaName = character.Name.TextValue;
             var path = Path.Combine(Plugin.Configuration.WorkingDirectory, charaName);
-            string infoJson = File.ReadAllText(Path.Combine(path, "snapshot.json"));
-            if (infoJson == null)
+
+            if (!File.Exists(Path.Combine(path, "snapshot.json")))
             {
-                Logger.Warn("No snapshot json found, aborting");
-                return false;
+                Logger.Warn("Append called, but snapshot.json missing. Falling back to SaveSnapshot.");
+                return this.SaveSnapshot(character);
             }
+
+            string infoJson = File.ReadAllText(Path.Combine(path, "snapshot.json"));
             SnapshotInfo? snapshotInfo = JsonSerializer.Deserialize<SnapshotInfo>(infoJson);
             if (snapshotInfo == null)
             {
-                Logger.Warn("Failed to deserialize snapshot json, aborting");
+                Logger.Warn("Failed to deserialize snapshot json, aborting append");
                 return false;
-            }
-
-            if (!Directory.Exists(path))
-            {
-                //no existing snapshot for character, just use save mode
-                return this.SaveSnapshot(character);
             }
 
             //Merge file replacements
             List<FileReplacement> replacements = GetFileReplacementsForCharacter(character);
-
-            Logger.Debug($"Got {replacements.Count} replacements");
+            Logger.Debug($"Got {replacements.Count} replacements for append");
 
             foreach (var replacement in replacements)
             {
-                FileInfo replacementFile = new FileInfo(replacement.ResolvedPath);
-                FileInfo fileToCreate = new FileInfo(Path.Combine(path, replacement.GamePaths[0]));
+                var sourceGamePath = replacement.GamePaths.First();
+                var resolvedDiskPath = Plugin.IpcManager.PenumbraResolvePathObject(sourceGamePath, character.ObjectIndex);
+
+                if (string.IsNullOrEmpty(resolvedDiskPath)
+                    || string.Equals(resolvedDiskPath, sourceGamePath, StringComparison.OrdinalIgnoreCase)
+                    || !File.Exists(resolvedDiskPath))
+                {
+                    continue;
+                }
+
+                FileInfo replacementFile = new FileInfo(resolvedDiskPath);
+                var snapshotFileName = replacement.GamePaths[0]; 
+                FileInfo fileToCreate = new FileInfo(Path.Combine(path, snapshotFileName));
+
                 if (!fileToCreate.Exists)
                 {
-                    //totally new file
                     fileToCreate.Directory.Create();
                     replacementFile.CopyTo(fileToCreate.FullName);
-                    foreach (var gamePath in replacement.GamePaths)
+                }
+
+                foreach (var gamePath in replacement.GamePaths)
+                {
+                    var collisions = snapshotInfo.FileReplacements.Where(src => src.Value.Any(p => p == gamePath)).ToList();
+                    foreach (var collision in collisions)
                     {
-                        var collisions = snapshotInfo.FileReplacements.Where(src => src.Value.Any(p => p == gamePath)).ToList();
-                        //gamepath already exists in snapshot, overwrite with new file
-                        foreach (var collision in collisions)
+                        collision.Value.Remove(gamePath);
+                        if (collision.Value.Count == 0)
                         {
-                            collision.Value.Remove(gamePath);
-                            if (collision.Value.Count == 0)
-                            {
-                                //delete file if it no longer has any references
-                                snapshotInfo.FileReplacements.Remove(collision.Key);
-                                File.Delete(Path.Combine(path, collision.Key));
-                            }
+                            snapshotInfo.FileReplacements.Remove(collision.Key);
+                            File.Delete(Path.Combine(path, collision.Key));
                         }
                     }
-                    snapshotInfo.FileReplacements.Add(replacement.GamePaths[0], replacement.GamePaths);
                 }
+                snapshotInfo.FileReplacements[snapshotFileName] = replacement.GamePaths;
             }
 
             //Merge meta manips
@@ -142,39 +147,24 @@ namespace Snappy.Managers
                 HandleCustomizePlusData(character, snapshotInfo, path);
             }
 
-            // Save the glamourer string
             var glamourerString = Plugin.IpcManager.GetGlamourerStateFromMare(character);
             if (string.IsNullOrEmpty(glamourerString))
             {
-                Logger.Debug("Glamourer data from Mare Synchronos is empty, attempting to get from IPC.");
                 glamourerString = Plugin.IpcManager.GetGlamourerState(character);
-                if (!string.IsNullOrEmpty(glamourerString))
-                {
-                    Logger.Info("Successfully used Glamourer data from IPC for append.");
-                }
-                else
-                {
-                    Logger.Warn("Glamourer data from IPC is also empty. Glamourer data will not be updated.");
-                }
             }
-            else
-            {
-                Logger.Info("Successfully used Glamourer data from Mare Synchronos for append.");
-            }
+
             if (!string.IsNullOrEmpty(glamourerString))
             {
                 snapshotInfo.GlamourerString = glamourerString;
             }
 
-            var options = new System.Text.Json.JsonSerializerOptions
-            {
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
+            var options = new System.Text.Json.JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
             string infoJsonWrite = JsonSerializer.Serialize(snapshotInfo, options);
             File.WriteAllText(Path.Combine(path, "snapshot.json"), infoJsonWrite);
 
             return true;
         }
+
         public bool SaveSnapshot(ICharacter character)
         {
             var charaName = character.Name.TextValue;
@@ -183,44 +173,34 @@ namespace Snappy.Managers
 
             if (Directory.Exists(path))
             {
-                Logger.Warn("Snapshot already existed. Running in append mode.");
-                return AppendSnapshot(character);
+                Logger.Warn("Snapshot already existed. Running in overwrite mode.");
+                Directory.Delete(path, true);
             }
             Directory.CreateDirectory(path);
 
             var glamourerString = Plugin.IpcManager.GetGlamourerStateFromMare(character);
             if (string.IsNullOrEmpty(glamourerString))
             {
-                Logger.Debug("Glamourer data from Mare Synchronos is empty, attempting to get from IPC.");
                 glamourerString = Plugin.IpcManager.GetGlamourerState(character);
-                if (!string.IsNullOrEmpty(glamourerString))
-                {
-                    Logger.Info("Successfully used Glamourer data from IPC.");
-                }
-                else
-                {
-                    Logger.Warn("Glamourer data from IPC is also empty. Glamourer data will be empty in snapshot.");
-                }
-            }
-            else
-            {
-                Logger.Info("Successfully used Glamourer data from Mare Synchronos.");
             }
             snapshotInfo.GlamourerString = glamourerString;
-            Logger.Debug($"Got glamourer string: {snapshotInfo.GlamourerString}");
 
             List<FileReplacement> replacements = GetFileReplacementsForCharacter(character);
+            Logger.Debug($"Got {replacements.Count} replacements for save.");
 
             foreach (var replacement in replacements)
             {
-                Logger.Debug(replacement.GamePaths[0]);
-            }
+                var sourceGamePath = replacement.GamePaths.First();
+                var resolvedDiskPath = Plugin.IpcManager.PenumbraResolvePathObject(sourceGamePath, character.ObjectIndex);
 
-            Logger.Debug($"Got {replacements.Count} replacements");
+                if (string.IsNullOrEmpty(resolvedDiskPath)
+                    || string.Equals(resolvedDiskPath, sourceGamePath, StringComparison.OrdinalIgnoreCase)
+                    || !File.Exists(resolvedDiskPath))
+                {
+                    continue;
+                }
 
-            foreach (var replacement in replacements)
-            {
-                FileInfo replacementFile = new FileInfo(replacement.ResolvedPath);
+                FileInfo replacementFile = new FileInfo(resolvedDiskPath);
                 FileInfo fileToCreate = new FileInfo(Path.Combine(path, replacement.GamePaths[0]));
                 fileToCreate.Directory.Create();
                 replacementFile.CopyTo(fileToCreate.FullName);
@@ -234,15 +214,13 @@ namespace Snappy.Managers
                 HandleCustomizePlusData(character, snapshotInfo, path);
             }
 
-            var options = new System.Text.Json.JsonSerializerOptions
-            {
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-            };
+            var options = new System.Text.Json.JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
             string infoJson = JsonSerializer.Serialize(snapshotInfo, options);
             File.WriteAllText(Path.Combine(path, "snapshot.json"), infoJson);
 
             return true;
         }
+
 
         private void HandleCustomizePlusData(ICharacter character, SnapshotInfo snapshotInfo, string snapshotPath)
         {
@@ -747,7 +725,7 @@ namespace Snappy.Managers
 
                 Logger.Verbose("Checking File Replacement for Texture " + texPath);
 
-                AddReplacementsFromTexture(texPath, replacements, objIdx, inheritanceLevel + 1);
+                AddReplacementsFromTexture(texPath, replacements, objIdx, inheritanceLevel + 1, doNotReverseResolve: true);
             }
 
             try
