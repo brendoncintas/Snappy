@@ -18,7 +18,7 @@ public class ConfigWindow : Window, IDisposable
     public ConfigWindow(Plugin plugin) : base(
         "Snappy Settings",
          ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoScrollbar |
-        ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.NoResize)
+        ImGuiWindowFlags.NoScrollWithMouse)
     {
         this.Size = new Vector2(350, 120) * ImGuiHelpers.GlobalScale;
         this.SizeCondition = ImGuiCond.Always;
