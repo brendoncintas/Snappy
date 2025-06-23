@@ -96,12 +96,30 @@ namespace Snappy.Managers
                 return false;
             }
 
-            //Merge file replacements
-            List<FileReplacement> replacements = GetFileReplacementsForCharacter(character);
-            Logger.Debug($"Got {replacements.Count} replacements for append");
+            List<FileReplacement> currentReplacements = GetFileReplacementsForCharacter(character);
+            Logger.Debug($"Got {currentReplacements.Count} replacements for merge.");
 
-            foreach (var replacement in replacements)
+            foreach (var replacement in currentReplacements)
             {
+                var conflictingEntries = snapshotInfo.FileReplacements
+                    .Where(kvp => kvp.Value.Any(pathInSnapshot => replacement.GamePaths.Contains(pathInSnapshot, StringComparer.OrdinalIgnoreCase)))
+                    .ToList();
+
+                if (conflictingEntries.Any())
+                {
+                    Logger.Debug($"Found {conflictingEntries.Count} conflicting entries for new replacement of {replacement.GamePaths.First()}. Removing old entries before adding new one.");
+                    foreach (var oldEntry in conflictingEntries)
+                    {
+                        snapshotInfo.FileReplacements.Remove(oldEntry.Key);
+                        var oldFilePath = Path.Combine(path, oldEntry.Key);
+                        if (File.Exists(oldFilePath))
+                        {
+                            File.Delete(oldFilePath);
+                            Logger.Verbose($"Deleted conflicting snapshot file: {oldFilePath}");
+                        }
+                    }
+                }
+
                 var sourceGamePath = replacement.GamePaths.First();
                 var resolvedDiskPath = Plugin.IpcManager.PenumbraResolvePathObject(sourceGamePath, character.ObjectIndex);
 
@@ -113,35 +131,19 @@ namespace Snappy.Managers
                 }
 
                 FileInfo replacementFile = new FileInfo(resolvedDiskPath);
-                var snapshotFileName = replacement.GamePaths[0]; 
+                var snapshotFileName = replacement.GamePaths[0];
                 FileInfo fileToCreate = new FileInfo(Path.Combine(path, snapshotFileName));
 
-                if (!fileToCreate.Exists)
-                {
-                    fileToCreate.Directory.Create();
-                    replacementFile.CopyTo(fileToCreate.FullName);
-                }
+                Logger.Debug($"Adding/overwriting file in snapshot: {snapshotFileName}");
 
-                foreach (var gamePath in replacement.GamePaths)
-                {
-                    var collisions = snapshotInfo.FileReplacements.Where(src => src.Value.Any(p => p == gamePath)).ToList();
-                    foreach (var collision in collisions)
-                    {
-                        collision.Value.Remove(gamePath);
-                        if (collision.Value.Count == 0)
-                        {
-                            snapshotInfo.FileReplacements.Remove(collision.Key);
-                            File.Delete(Path.Combine(path, collision.Key));
-                        }
-                    }
-                }
+                fileToCreate.Directory?.Create();
+                replacementFile.CopyTo(fileToCreate.FullName, true);
+
                 snapshotInfo.FileReplacements[snapshotFileName] = replacement.GamePaths;
             }
 
-            //Merge meta manips
             snapshotInfo.ManipulationString = Plugin.IpcManager.GetMetaManipulations(character.ObjectIndex);
 
-            // Merge Customize+
             if (Plugin.IpcManager.IsCustomizePlusAvailable())
             {
                 HandleCustomizePlusData(character, snapshotInfo, path);
@@ -158,10 +160,11 @@ namespace Snappy.Managers
                 snapshotInfo.GlamourerString = glamourerString;
             }
 
-            var options = new System.Text.Json.JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+            var options = new System.Text.Json.JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
             string infoJsonWrite = JsonSerializer.Serialize(snapshotInfo, options);
             File.WriteAllText(Path.Combine(path, "snapshot.json"), infoJsonWrite);
 
+            Logger.Info($"Successfully merged snapshot for {charaName}.");
             return true;
         }
 
@@ -214,7 +217,7 @@ namespace Snappy.Managers
                 HandleCustomizePlusData(character, snapshotInfo, path);
             }
 
-            var options = new System.Text.Json.JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+            var options = new System.Text.Json.JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
             string infoJson = JsonSerializer.Serialize(snapshotInfo, options);
             File.WriteAllText(Path.Combine(path, "snapshot.json"), infoJson);
 
